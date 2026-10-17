@@ -4,7 +4,7 @@
 # i repot REPO och miljön azure-staging, och bara med rätt att ändra resursgruppen RG.
 # Körs EN gång per team, efter skapa-staging.sh. Skriver ut raderna för GitHub-miljön.
 #
-#   REPO=<ägare>/<repo> ./infra/azure/identitet.sh
+#   REPO=<ägare>/<repo> ./infra/azure/identitet.sh      (kräver az + gh inloggade)
 set -euo pipefail
 
 : "${REPO:?Sätt REPO=<ägare>/<repo>}"
@@ -17,20 +17,33 @@ SUB="$(az account show --query id --output tsv)"
 TENANT="$(az account show --query tenantId --output tsv)"
 
 echo "→ app registration + service principal: ${NAME}"
-APPID="$(az ad app create --display-name "${NAME}" --query appId --output tsv)"
-az ad sp create --id "${APPID}" --output none 2>/dev/null || true
+# Körs skriptet om återanvänds den app registration som redan finns (ingen dubblett).
+APPID="$(az ad app list --display-name "${NAME}" --query '[0].appId' --output tsv)"
+if [ -z "${APPID}" ]; then
+  APPID="$(az ad app create --display-name "${NAME}" --query appId --output tsv)"
+fi
+az ad sp show --id "${APPID}" --output none 2>/dev/null || az ad sp create --id "${APPID}" --output none
+# Ger az ad app create "Insufficient privileges": du får inte skapa identiteter i den här katalogen –
+# be den som administrerar prenumerationen köra skriptet (REPO=… RG=…), resten av flödet är oförändrat.
 
 echo "→ rollen Contributor på BARA resursgruppen ${RG} (inte hela prenumerationen)"
+TILLDELAD=""
 for i in 1 2 3 4 5 6; do
-  if az role assignment create --role Contributor --assignee "${APPID}" --scope "/subscriptions/${SUB}/resourceGroups/${RG}" --output none 2>/dev/null; then break; fi
-  echo "   identiteten syns inte än – väntar 10 s (${i}/6)"; sleep 10
+  if az role assignment create --role Contributor --assignee "${APPID}" --scope "/subscriptions/${SUB}/resourceGroups/${RG}" --output none; then TILLDELAD=ja; break; fi
+  echo "   (identiteten syns ofta inte direkt efter att den skapats – väntar 10 s, försök ${i}/6)"; sleep 10
 done
+if [ -z "${TILLDELAD}" ]; then
+  echo "FEL: rolltilldelningen gick inte igenom. Utan den blir Deploy rött med AuthorizationFailed." >&2
+  echo "     Kräver Owner eller User Access Administrator på resursgruppen – annars gör en administratör raden ovan." >&2
+  exit 1
+fi
 
 # GitHub skickar subject med id:n: repo:<ägare>@<ägar-id>/<repo>@<repo-id>:environment:<miljö>.
 # Namn räcker inte: ett repo som döps om eller skapas på nytt med samma namn får inte logga in.
-IDS="$(curl -fsS "https://api.github.com/repos/${REPO}" | sed -n 's/.*"id": *\([0-9]*\).*/\1/p' | head -1)"
-OWNER_ID="$(curl -fsS "https://api.github.com/users/${REPO%%/*}" | sed -n 's/.*"id": *\([0-9]*\).*/\1/p' | head -1)"
-SUBJECT="repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${IDS}:environment:${GH_ENV}"
+# gh (inloggad) i stället för anonym curl – GitHubs anonyma gräns delas av alla på samma nät.
+REPO_ID="$(gh api "repos/${REPO}" --jq .id)"
+OWNER_ID="$(gh api "repos/${REPO}" --jq .owner.id)"
+SUBJECT="repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${REPO_ID}:environment:${GH_ENV}"
 echo "→ federerad identitet, subject: ${SUBJECT}"
 az ad app federated-credential create --id "${APPID}" --parameters "{\"name\":\"github-${GH_ENV}\",\"issuer\":\"https://token.actions.githubusercontent.com\",\"subject\":\"${SUBJECT}\",\"audiences\":[\"api://AzureADTokenExchange\"]}" --output none
 
