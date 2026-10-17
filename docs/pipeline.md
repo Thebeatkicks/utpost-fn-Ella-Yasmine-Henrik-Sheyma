@@ -1,6 +1,6 @@
 # Pipeline – Utpost
 
-*Exempelifyllt facit (M1). Tider är från en riktig körning på mallrepot – teamen fyller i sina egna.*
+*Exempelifyllt facit (M1, utbyggt t.o.m. M6). Tider är från en riktig körning på mallrepot – teamen fyller i sina egna.*
 
 ## Flödet
 
@@ -19,6 +19,8 @@ flowchart LR
   S -->|ja| M[merge – knappen är grön]
   S -->|nej| F[fixa, pusha igen<br/>körningen startar om]
   M --> MAIN[main är alltid byggbar]
+  MAIN --> D[Deploy → Azure staging<br/>OIDC-inloggning · byt image till sha · vänta på /api/health · röktest]
+  D --> ST[staging kör den mergade committen]
 ```
 
 ## Vad som körs, och varför
@@ -31,6 +33,7 @@ flowchart LR
 | Bygg | `npm run build` (`vite build` av `client/`) | importfel, trasiga templates, allt som bara syns vid bygge | ~2 s |
 | Typkontroll (M2, M5) | `npm run typecheck` (codegen + `vue-tsc` + `tsc`) | ett fält som tagits bort ur schemat men används i en vy – kedjan schema → fråga → vy | ~10 s |
 | Integration (M5) | `npm run test:api` mot Postgres och Mongo som *services* | resolvers som inte stämmer med databasen, N+1 som kommit tillbaka, mutationer utan inloggningskrav – det klientens mockade tester aldrig ser | ~40 s inkl. start av databaserna |
+| Deploy (M6) | `az containerapp update … --image …:sha-…` ×2 (api, client), vänta på `sha` i `/api/health`, röktest `/graphql` | en image som inte startar, en nginx-mall som inte renderas, en app som inte kommer upp – innan någon användare ser det | ______ (bara på `main`; väcks appen från noll tillkommer ~1 min) |
 | Image (M4) | `docker/build-push-action` på `api/Dockerfile` och `client/Dockerfile` | en Dockerfile som inte går att bygga; på `main` publiceras imagerna med `sha-`tagg | ~1,5 min |
 
 `npm ci` (~25 s) dominerar – den installerar alla tre workspaces inklusive React-klientens beroenden. När `web/` tas bort (M6) halveras tiden.
@@ -41,6 +44,7 @@ flowchart LR
 - Kräver status checks **Kvalitet**, **Bygg**, **Integration** och **Image** gröna innan merge
 - Kräver att branchen är uppdaterad mot `main` före merge (annars testas en kod som aldrig kommer att finnas)
 - Gäller även admins
+- *Deploy → Azure staging* är **inte** en status check: den körs efter merge, på `main`. Blir den röd är `main` ändå korrekt – det är staging som inte uppdaterades. Rätta och merga igen, eller rulla tillbaka i portalen (*Revisions and replicas* → aktivera den förra).
 
 ## Vanliga fel vi sett
 
@@ -48,3 +52,6 @@ flowchart LR
 - **`format:check` rött:** kör `npm run format --workspace=client` och committa. CI ska aldrig ändra kod, bara säga nej.
 - **Status check heter fel i rulesetet:** namnet är jobbets `name:` (Kvalitet, Bygg, Integration, Image) – inte filnamnet.
 - **Integration rött men testerna gröna lokalt:** databasen i jobbet är tom tills `npm run seed` körts, och `Tour.logs` läser Mongo – `npm run migrate:logs` måste också ha körts. Portarna är `5432`/`27017` på `localhost` i jobbet, inte `5433` som i compose.
+- **Deploy rött med *AADSTS700213 No matching federated identity record*:** subjectet stämmer inte. Felmeddelandet skriver ut det subject GitHub skickade – skapa en federerad identitet till med exakt det värdet (`az ad app federated-credential create`, nytt `name`). Jobbet måste också ha `environment: azure-staging`.
+- **Deploy rött på *Vänta tills staging kör den här committen*:** appen startar från noll (fyra containrar + seed, ~1 min) – 30 försök à 10 s brukar räcka. Står `sha` kvar på det gamla värdet efter fem minuter: revisionen startade inte. `az containerapp logs show --name utpost-staging --resource-group utpost-rg --container api --tail 50`.
+- **Deploy rött på röktestet men väntan grön:** api svarar, men nginx når det inte eller databasen är tom. Kolla `API_UPSTREAM` (ska vara `localhost:4000` i Azure) och `SEED_ON_START`.
