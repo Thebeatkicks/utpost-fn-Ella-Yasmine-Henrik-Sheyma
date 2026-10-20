@@ -8,6 +8,8 @@
 #
 # Imagerna måste finnas i GHCR (jobbet Image på main): ghcr.io/<ägare>/<repo>-api:sha-<7 tecken>.
 # Variablerna går att skriva över: RG, LOC, ENV_NAME, APP.
+# M7: FUNCTION_URL och FUNCTION_KEY (bildfunktionen). Utan dem får api-containern platshållare och
+# uppladdningen svarar 502 tills infra/azure/skapa-funktion.sh med CONTAINER_APP=<appen> kopplat in funktionen.
 set -euo pipefail
 
 : "${REPO:?Sätt REPO=<ägare>/<repo> (t.ex. jonatanhallenberg/utpost-cloud-labb)}"
@@ -16,6 +18,8 @@ RG="${RG:-utpost-rg}"
 LOC="${LOC:-swedencentral}"
 ENV_NAME="${ENV_NAME:-utpost-env}"
 APP="${APP:-utpost-staging}"
+FUNCTION_URL="${FUNCTION_URL:-https://ingen-funktion-an.invalid/api/process-image}"
+FUNCTION_KEY="${FUNCTION_KEY:-ingen-nyckel-an}"
 OWNER_LC="$(echo "${REPO}" | tr '[:upper:]' '[:lower:]')"
 IMAGE_API="ghcr.io/${OWNER_LC}-api:sha-${SHA:0:7}"
 IMAGE_CLIENT="ghcr.io/${OWNER_LC}-client:sha-${SHA:0:7}"
@@ -40,10 +44,11 @@ TMP="$(mktemp)"
 sed -e "s|__LOCATION__|${LOC}|g" -e "s|__APP__|${APP}|g" -e "s|__RG__|${RG}|g" -e "s|__ENV_ID__|${ENV_ID}|g" \
     -e "s|__IMAGE_API__|${IMAGE_API}|g" -e "s|__IMAGE_CLIENT__|${IMAGE_CLIENT}|g" \
     -e "s|__JWT_SECRET__|${JWT_SECRET}|g" -e "s|__DB_PASSWORD__|${DB_PASSWORD}|g" \
+    -e "s|__FUNCTION_URL__|${FUNCTION_URL}|g" -e "s|__FUNCTION_KEY__|${FUNCTION_KEY}|g" \
     "$(dirname "$0")/staging.yaml" > "${TMP}"
 az containerapp create --resource-group "${RG}" --name "${APP}" --yaml "${TMP}" --output none
 rm -f "${TMP}"
-unset JWT_SECRET DB_PASSWORD
+unset JWT_SECRET DB_PASSWORD FUNCTION_KEY
 
 FQDN="$(az containerapp show --name "${APP}" --resource-group "${RG}" --query properties.configuration.ingress.fqdn --output tsv)"
 echo

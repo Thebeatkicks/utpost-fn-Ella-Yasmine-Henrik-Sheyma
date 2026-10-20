@@ -3,5 +3,8 @@
 **/node_modules
 **/dist
 .git
+# M7: functions/ deployas till Azure Functions (eget paket), scripts/ körs från din dator – ingen av dem hör hemma i en image
+functions
+scripts
 uploads
 .env

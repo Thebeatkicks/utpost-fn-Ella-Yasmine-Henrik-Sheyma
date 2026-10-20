@@ -43,6 +43,11 @@ services:
       MONGO_URL: mongodb://utpost:utpost@mongo:27017/utpost?authSource=admin
       JWT_SECRET: utpost-dev-secret-byt-i-molnet # M6: lokalt värde. I molnet: en secret i plattformen, aldrig i en fil som committas
       SEED_ON_START: '1' # M6: tom databas vid start → seed + migrate:logs. Lokalt: harmlöst, seedar bara om users är tom
+      # M7: bildfunktionen kör inte i compose – den kör på din dator med func start (npm run dev:functions).
+      # host.docker.internal är värddatorn sedd inifrån en container (Docker Desktop på Mac och Windows).
+      IMAGE_FUNCTION_URL: http://host.docker.internal:7071/api/process-image
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # M7: samma namn på Linux (Docker Engine), där det inte finns av sig självt
     # Inga ports: browsern når API:et genom nginx i client (/api och /graphql skickas vidare
     # till api:4000 inne i nätverket). Felsöka API:et direkt? Lägg tillbaka  ports: - "4000:4000"
     depends_on:

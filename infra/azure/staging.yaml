@@ -9,6 +9,9 @@
 # Används av infra/azure/skapa-staging.sh: platshållarna __…__ byts ut innan filen skickas till
 # az containerapp create --yaml. Pipelinen rör aldrig den här filen: den byter bara image med
 # az containerapp update --container-name api/client --image …:sha-….
+#
+# M7: api-containern anropar bildfunktionen (Azure Functions, infra/azure/skapa-funktion.sh) på
+# IMAGE_FUNCTION_URL med nyckeln IMAGE_FUNCTION_KEY – adressen som vanlig variabel, nyckeln som secret.
 location: __LOCATION__
 name: __APP__
 resourceGroup: __RG__
@@ -31,6 +34,8 @@ properties:
         value: mongodb://utpost:__DB_PASSWORD__@localhost:27017/utpost?authSource=admin
       - name: db-password
         value: __DB_PASSWORD__
+      - name: image-function-key
+        value: __FUNCTION_KEY__  # M7: funktionsnyckeln (az functionapp keys list) – sätts av skapa-funktion.sh
   template:
     containers:
       - name: client
@@ -57,6 +62,10 @@ properties:
             secretRef: mongo-url
           - name: JWT_SECRET
             secretRef: jwt-secret
+          - name: IMAGE_FUNCTION_URL
+            value: __FUNCTION_URL__  # M7: https://<function-app>.azurewebsites.net/api/process-image – ingen hemlighet
+          - name: IMAGE_FUNCTION_KEY
+            secretRef: image-function-key
       - name: postgres
         image: postgres:16
         resources:
