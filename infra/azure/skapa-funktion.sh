@@ -73,7 +73,8 @@ for i in $(seq 1 12); do
   sleep 10
 done
 [ -n "${KEY}" ] || { echo "Fick ingen nyckel. Portalen: ${APP} → Functions → App keys."; exit 1; }
-URL="https://$(az functionapp show --name "${APP}" --resource-group "${RG}" --query defaultHostName --output tsv)/api/process-image"
+# az 2.90 lägger Flex-appens fält under properties (defaultHostName på toppnivån blir tomt) – därför båda (sett 5/11 2026).
+URL="https://$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName || properties.defaultHostName" --output tsv)/api/process-image"
 
 if [ -n "${CONTAINER_APP}" ]; then
   # Secrets ger ingen ny revision – variabeländringen gör det, och den nya revisionen läser secreten.
