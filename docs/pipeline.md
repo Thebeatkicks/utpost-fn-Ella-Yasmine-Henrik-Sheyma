@@ -21,6 +21,8 @@ flowchart LR
   M --> MAIN[main är alltid byggbar]
   MAIN --> D[Deploy → Azure staging<br/>OIDC-inloggning · byt image till sha · vänta på /api/health · röktest]
   D --> ST[staging kör den mergade committen]
+  MAIN --> DF[Deploy → Azure Functions<br/>npm ci --omit=dev i functions/ · OIDC-inloggning · functions-action · röktest process-image]
+  DF --> FN[funktionen kör den mergade committen]
 ```
 
 ## Vad som körs, och varför
@@ -35,6 +37,8 @@ flowchart LR
 | Integration (M5) | `npm run test:api` mot Postgres och Mongo som *services* | resolvers som inte stämmer med databasen, N+1 som kommit tillbaka, mutationer utan inloggningskrav – det klientens mockade tester aldrig ser | ~40 s inkl. start av databaserna |
 | Deploy (M6) | `az containerapp update … --image …:sha-…` ×2 (api, client – två revisioner per deploy), vänta på `sha` i `/api/health` och på sista revisionen, röktest `/graphql` | en image som inte startar, en nginx-mall som inte renderas, en app som inte kommer upp – innan någon användare ser det | ______ (bara på `main`; väcks appen från noll tillkommer ~1 min) |
 | Image (M4) | `docker/build-push-action` på `api/Dockerfile` och `client/Dockerfile` | en Dockerfile som inte går att bygga; på `main` publiceras imagerna med `sha-`tagg | ~1,5 min |
+| Deploy → Azure Functions (M7) | `npm ci --omit=dev` i `functions/`, `Azure/functions-action@v1`, röktest: `POST /api/process-image` med nyckeln hämtad i jobbet | en funktion som inte startar i Azure, ett paket utan `node_modules`, fel app-namn | ______ (bara på `main`; röktestet är en kallstart) |
+- *Deploy → Azure Functions* (M7) är inte heller en status check. **Två deployjobb, oberoende av varandra** – API:et läser funktionens adress ur miljön, så ordningen spelar ingen roll.
 
 `npm ci` dominerar – den installerar alla workspaces (`shared`, `api`, `client`). React-klienten `web/` och dess beroenden togs bort i M6.
 
