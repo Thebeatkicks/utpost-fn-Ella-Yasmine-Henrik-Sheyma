@@ -23,11 +23,13 @@
 
 | Mätning | Uppladdning p50 | Uppladdning max | Health p50 | Health max | Total tid |
 |---|---|---|---|---|---|
-| Före, lokalt (N = ) | | | | | |
-| Efter, lokalt (N = ) | | | | | |
+| Före, lokalt (N = 10) | 2047 ms | 2059 ms | 933 ms | 1798 ms | 2070 ms |
+| Efter, lokalt (N = 10) | 2152 ms | 2174 ms | 11 ms | 64 ms | 2183 ms |
 | Efter, staging (N = ) | | | | | |
 
 *Vad blev snabbare – och vad blev det inte? Varför?*
+
+Health max under last gick från cirka 1,8 s till 64 ms. Uppladdningen blev inte snabbare: max ökade från 2059 ms till 2174 ms. Bildarbetet körs nu i en separat process, så API:ets tråd kan svara på andra anrop medan den väntar på funktionen. Båda mätningarna använde tio samtidiga uppladdningar på 4000 × 3000 pixlar och samtliga anrop lyckades.
 
 ## Kallstart
 *Första anropet efter minst 20 minuters paus (`curl -w '%{time_total}'`, svaret säger `"coldStart": true`) och andra anropet direkt efter. Mät inte direkt efter en deploy – då är funktionen redan varm.*
